@@ -61,7 +61,6 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"testing"
 	"time"
 )
 
@@ -98,7 +97,6 @@ func main() {
 	}
 	wg.Wait()
 
-	fmt.Println("result:", sum)
 	if sum != 499500 {
 		panic("caculate error")
 	}
