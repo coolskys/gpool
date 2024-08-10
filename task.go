@@ -49,6 +49,8 @@ type ITask interface {
 	Execute(done chan bool)
 	Result() *Result
 	GetTaskStat() *TaskStat
+	Stop()
+	IsBlock() bool
 }
 
 func NewBlockTask(name string, bfn TaskBFn, args ...interface{}) *task {
@@ -92,6 +94,10 @@ func (t *task) Result() *Result {
 	return t.result
 }
 
+func (t *task) IsBlock() bool {
+	return t.isBlock
+}
+
 func (t *task) Execute(done chan bool) {
 	if t == nil {
 		return
@@ -110,7 +116,9 @@ func (t *task) Execute(done chan bool) {
 			case <-t.stopChan:
 				return
 			default:
-				t.bfn(t.args...)
+				if t.state != TASK_EXECUTING {
+					t.bfn(t.args...)
+				}
 			}
 		}
 	}
@@ -137,6 +145,10 @@ func (t *task) Execute(done chan bool) {
 
 	// 执行完成，通知worker
 	done <- true
+}
+
+func (t *task) Stop() {
+	t.stopChan <- struct{}{}
 }
 
 func (t *task) stateString() string {

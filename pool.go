@@ -241,8 +241,6 @@ func (p *Pool) Release() {
 	// 关闭通道，不再处理任务
 	close(p.workerChan)
 
-	// 如果执行中任务有阻塞，则会造成内存泄漏
-
 	p.taskResult = nil
 }
 

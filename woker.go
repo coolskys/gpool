@@ -53,22 +53,37 @@ func (w *worker) Execute(ctx context.Context) {
 	w.sig = WorkerWorking
 	w.mu.Unlock()
 
-	select {
-	case <-w.ctx.Done():
-		fmt.Println("context done")
-		return
-	default:
+	if w.task.IsBlock() {
+		for {
+			select {
+			case <-w.ctx.Done():
+				// 监听到worker退出，则停止任务执行
+				fmt.Println("context done")
+				w.task.Stop()
+				return
+			case <-w.done:
+				return
+			default:
+				w.pool.once.Do(func() {
+					w.task.Execute(w.done)
+				})
+			}
+		}
+	} else {
 		w.pool.once.Do(func() {
 			w.task.Execute(w.done)
 		})
 	}
+
 }
 
 // 结束任务
 func (w *worker) Kill(err error) {
 	// 取消任务执行
 	if err != nil {
-		w.cancel()
+		if w.task != nil {
+			w.task.Stop()
+		}
 	}
 
 	w.mu.Lock()
