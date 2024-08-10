@@ -20,6 +20,7 @@ type TaskBFn func(args ...interface{})                     // 阻塞任务
 type task struct {
 	id           uint64
 	name         string
+	stopChan     chan struct{}
 	fn           TaskFn
 	bfn          TaskBFn
 	isBlock      bool
@@ -104,7 +105,14 @@ func (t *task) Execute(done chan bool) {
 		if t.bfn == nil {
 			return
 		}
-		t.bfn(t.args...)
+		for {
+			select {
+			case <-t.stopChan:
+				return
+			default:
+				t.bfn(t.args...)
+			}
+		}
 	}
 
 	// 非阻塞任务直接返回

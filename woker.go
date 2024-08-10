@@ -16,7 +16,7 @@ const (
 
 // 工作者
 type worker struct {
-	pool   *gpool
+	pool   *Pool
 	task   ITask
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -33,12 +33,14 @@ type IWorker interface {
 	State() string
 }
 
-func newWorker(pool *gpool) *worker {
+func newWorker(pool *Pool) *worker {
+	ctx, cancel := context.WithCancel(pool.context)
 	worker := &worker{
-		mu:   sync.Mutex{},
-		pool: pool,
-		ctx:  pool.context,
-		done: make(chan bool),
+		mu:     sync.Mutex{},
+		pool:   pool,
+		ctx:    ctx,
+		cancel: cancel,
+		done:   make(chan bool),
 	}
 	return worker
 }
@@ -56,7 +58,9 @@ func (w *worker) Execute(ctx context.Context) {
 		fmt.Println("context done")
 		return
 	default:
-		w.task.Execute(w.done)
+		w.pool.once.Do(func() {
+			w.task.Execute(w.done)
+		})
 	}
 }
 

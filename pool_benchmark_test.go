@@ -102,7 +102,12 @@ func BenchmarkErrGroup(b *testing.B) {
 
 func BenchmarkGPool(b *testing.B) {
 	var wg sync.WaitGroup
-	p := NewGPool("test", PoolCap, context.Background())
+	p := NewGPool(context.Background(),
+		WithName("default"),
+		WithCapacity(10),
+		WithMaxTaskNum(10000),
+		WithMode(ModeBlock),
+		WithTimeout(30*time.Second))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

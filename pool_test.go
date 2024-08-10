@@ -23,9 +23,13 @@ func demoFuncs(args ...interface{}) {
 }
 
 func TestGPool(t *testing.T) {
-	pool := NewGPool("Test", 100, context.Background())
-	pool.Start()
-
+	pool := NewGPool(context.Background(),
+		WithName("default"),
+		WithCapacity(10),
+		WithMaxTaskNum(10000),
+		WithMode(ModeBlock),
+		WithTimeout(30*time.Second),
+	)
 	runTimes := 1000
 	var wg sync.WaitGroup
 	syncCalculateSum := func(args ...interface{}) (interface{}, error) {
@@ -47,5 +51,6 @@ func TestGPool(t *testing.T) {
 		panic("caculate error")
 	}
 	time.Sleep(5 * time.Second)
-	pool.Stop()
+
+	pool.Release()
 }
