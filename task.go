@@ -66,18 +66,6 @@ func NewBlockTask(name string, bfn TaskBFn, args ...interface{}) *task {
 	}
 }
 
-func (t *task) GetTaskID() uint64 {
-	return t.id
-}
-
-func (t *task) GetArgs() []interface{} {
-	return t.args
-}
-
-func (t *task) GetState() string {
-	return t.stateString()
-}
-
 func NewTask(name string, fn TaskFn, args ...interface{}) ITask {
 	if fn == nil {
 		return nil
@@ -88,6 +76,18 @@ func NewTask(name string, fn TaskFn, args ...interface{}) ITask {
 		fn:   fn,
 		args: args,
 	}
+}
+
+func (t *task) GetTaskID() uint64 {
+	return t.id
+}
+
+func (t *task) GetArgs() []interface{} {
+	return t.args
+}
+
+func (t *task) GetState() string {
+	return t.stateString()
 }
 
 func (t *task) Result() *Result {

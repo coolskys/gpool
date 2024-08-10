@@ -64,17 +64,15 @@ func (w *worker) Execute(ctx context.Context) {
 			case <-w.done:
 				return
 			default:
-				w.pool.once.Do(func() {
+				if w.sig != WorkerWorking {
 					w.task.Execute(w.done)
-				})
+				}
 			}
 		}
 	} else {
-		w.pool.once.Do(func() {
-			w.task.Execute(w.done)
-		})
+		fmt.Println("执行任务", w.task.GetTaskID())
+		w.task.Execute(w.done)
 	}
-
 }
 
 // 结束任务

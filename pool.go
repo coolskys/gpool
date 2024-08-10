@@ -1,7 +1,6 @@
 package gpool
 
 import (
-	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -37,7 +36,7 @@ const (
 type gpool struct {
 	once *sync.Once
 
-	mu sync.Locker
+	mu sync.Mutex
 
 	// waitgroup
 	wg sync.WaitGroup
@@ -48,13 +47,13 @@ type gpool struct {
 	// 工作者列表, 线程池较大时，使用链表结构
 	// PushBack()和Front()，PushFront()和Back() - 队列
 	// PushBack()和Back(), PushFront()和Front() - 栈
-	workfactory *list.List
+	// workfactory *list.List
 
 	// 工作者列表，线程池较小时，使用数组结构
 	// workfactory []*worker
 
 	// 其他工厂
-	otherfactory *list.List
+	// otherfactory *list.List
 
 	// 工作中线程数，空闲线程数
 	workingNum, idleNum int64
@@ -81,20 +80,24 @@ type Pool struct {
 	gpool
 }
 
-func NewGPool(ctx context.Context, opts ...Option) *Pool {
+func NewGPool(ctx context.Context, options ...Option) *Pool {
 	context, cancel := context.WithCancel(ctx)
 
 	pool := &Pool{gpool: gpool{
-		wg:           sync.WaitGroup{},
-		once:         &sync.Once{},
-		workfactory:  list.New(),
-		otherfactory: list.New(),
-		context:      context,
-		cancel:       cancel,
-		taskResult:   make(map[uint64]*Result),
+		wg:   sync.WaitGroup{},
+		once: &sync.Once{},
+		mu:   sync.Mutex{},
+		// workfactory:  list.New(),
+		// otherfactory: list.New(),
+		context:    context,
+		cancel:     cancel,
+		taskResult: make(map[uint64]*Result),
 	}}
 
-	for _, opt := range opts {
+	pool.options = &Options{
+		mode: ModeBlock,
+	}
+	for _, opt := range options {
 		opt(pool.options)
 	}
 
@@ -117,7 +120,6 @@ func (p *Pool) Start() {
 	if !atomic.CompareAndSwapInt64(&p.state, StateStopped, StateStarted) {
 		return
 	}
-
 	// 从taskqueue取出任务执行
 	go func() {
 		for {
@@ -142,6 +144,7 @@ func (p *Pool) Start() {
 						defer p.wg.Done()
 						for <-w.done {
 							// 存放结果
+							fmt.Println("done")
 							p.mu.Lock()
 							w.pool.taskResult[w.task.GetTaskID()] = w.task.Result()
 							p.mu.Unlock()

@@ -30,6 +30,7 @@ func TestGPool(t *testing.T) {
 		WithMode(ModeBlock),
 		WithTimeout(30*time.Second),
 	)
+	pool.Start()
 	runTimes := 1000
 	var wg sync.WaitGroup
 	syncCalculateSum := func(args ...interface{}) (interface{}, error) {
@@ -45,12 +46,10 @@ func TestGPool(t *testing.T) {
 		fmt.Println("提交任务：", i+1)
 	}
 	wg.Wait()
-
 	fmt.Println("result:", sum)
 	if sum != 499500 {
 		panic("caculate error")
 	}
-	time.Sleep(5 * time.Second)
-
+	time.Sleep(time.Second)
 	pool.Release()
 }
