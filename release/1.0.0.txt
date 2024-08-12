@@ -1,0 +1,5 @@
+## 待解决问题
+1. worker没有火力全开
+2. 并发量大时，会出现死锁。
+3. pool release之后，报错send on closed channel
+4. task panic之后，无法主动退出主线程

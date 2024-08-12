@@ -16,9 +16,9 @@ type (
 
 const (
 	DefaultMaxIdleNum       = 2
-	DefaultMaxTaskNum       = 10000000
+	DefaultMaxTaskNum       = 1e6
 	DefaultCapacity         = 10
-	GPoolWorkerNumThreshold = 10000000
+	GPoolWorkerNumThreshold = 1e4
 	DefaultTimeout          = time.Hour
 )
 
@@ -34,15 +34,13 @@ const (
 
 // 线程池
 type gpool struct {
-	once *sync.Once
-
 	mu sync.Mutex
 
 	// waitgroup
 	wg sync.WaitGroup
 
 	// 任务队列
-	taskQueue chan ITask
+	taskQueue chan GTask
 
 	// 工作者列表, 线程池较大时，使用链表结构
 	// PushBack()和Front()，PushFront()和Back() - 队列
@@ -80,27 +78,7 @@ type Pool struct {
 	gpool
 }
 
-func NewGPool(ctx context.Context, options ...Option) *Pool {
-	context, cancel := context.WithCancel(ctx)
-
-	pool := &Pool{gpool: gpool{
-		wg:   sync.WaitGroup{},
-		once: &sync.Once{},
-		mu:   sync.Mutex{},
-		// workfactory:  list.New(),
-		// otherfactory: list.New(),
-		context:    context,
-		cancel:     cancel,
-		taskResult: make(map[uint64]*Result),
-	}}
-
-	pool.options = &Options{
-		mode: ModeBlock,
-	}
-	for _, opt := range options {
-		opt(pool.options)
-	}
-
+func loadOptions(pool *Pool) {
 	if pool.options.capacity <= 0 {
 		pool.options.capacity = DefaultCapacity
 	}
@@ -112,7 +90,28 @@ func NewGPool(ctx context.Context, options ...Option) *Pool {
 		pool.options.timeout = DefaultTimeout
 	}
 	pool.workerChan = make(chan *worker, pool.options.capacity)
-	pool.taskQueue = make(chan ITask, pool.options.maxTaskNum)
+}
+
+func NewGPool(ctx context.Context, options ...Option) *Pool {
+	context, cancel := context.WithCancel(ctx)
+
+	pool := &Pool{gpool: gpool{
+		wg:         sync.WaitGroup{},
+		mu:         sync.Mutex{},
+		context:    context,
+		cancel:     cancel,
+		taskResult: make(map[uint64]*Result),
+		taskQueue:  make(chan GTask, 1),
+	}}
+
+	pool.options = &Options{
+		mode: ModeBlock,
+	}
+	for _, opt := range options {
+		opt(pool.options)
+	}
+
+	loadOptions(pool)
 	return pool
 }
 
@@ -125,11 +124,16 @@ func (p *Pool) Start() {
 		for {
 			select {
 			case <-p.context.Done():
+				fmt.Println("context done 11111111")
 				return
 			case task := <-p.taskQueue:
 				if task != nil {
 					w, err := p.Get()
-					if err != nil || w == nil {
+					if err != nil {
+						fmt.Println(err)
+						return
+					}
+					if w == nil {
 						return
 					}
 					// 执行任务
@@ -138,13 +142,13 @@ func (p *Pool) Start() {
 
 					// 对于每个任务，启动两个协程，一个执行任务，一个监听任务
 					p.wg.Add(2)
-					go w.Execute(p.context)
+					go w.Execute()
 					// 监听任务
 					go func() {
 						defer p.wg.Done()
 						for <-w.done {
 							// 存放结果
-							fmt.Println("done")
+							fmt.Printf("结束任务：%d\n", w.task.GetTaskID())
 							p.mu.Lock()
 							w.pool.taskResult[w.task.GetTaskID()] = w.task.Result()
 							p.mu.Unlock()
@@ -163,11 +167,14 @@ func (p *Pool) Start() {
 		}
 	}()
 
+	p.wg.Add(1)
 	// Debug: 状态输出
 	go func() {
+		defer p.wg.Done()
 		for {
 			select {
 			case <-p.context.Done():
+				fmt.Println("context done xxxxx")
 				return
 			default:
 				p.Stat()
@@ -176,7 +183,6 @@ func (p *Pool) Start() {
 
 		}
 	}()
-	go p.wg.Wait()
 }
 
 func (p *Pool) Get() (*worker, error) {
@@ -190,7 +196,6 @@ func (p *Pool) Get() (*worker, error) {
 		if p.isFull() {
 			switch p.options.mode {
 			case ModeBlock:
-				// 阻塞等待可用的worker:
 				for worker := range p.workerChan {
 					if worker != nil {
 						atomic.AddInt64(&p.idleNum, -1)
@@ -209,7 +214,7 @@ func (p *Pool) Get() (*worker, error) {
 	}
 }
 
-func (p *Pool) Submit(task ITask) error {
+func (p *Pool) Submit(task GTask) error {
 	if p == nil {
 		return errors.New("pool not init")
 	}
@@ -218,11 +223,15 @@ func (p *Pool) Submit(task ITask) error {
 		return errors.New("empty task")
 	}
 
+	if p.IsClosed() {
+		return errors.New("pool is closed")
+	}
+
 	select {
 	case <-p.context.Done():
 		return p.context.Err()
 	default:
-		go func() { p.taskQueue <- task }()
+		p.taskQueue <- task
 	}
 	return nil
 }
@@ -233,10 +242,14 @@ func (p *Pool) Release() {
 		return
 	}
 
+	fmt.Println("xxxxxxxxxxxx 释放资源")
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// 停止处理任务
 	p.cancel()
+
+	// 等待所有任务处理完成
+	p.wg.Wait()
 
 	p.state = StateStopped
 	// 关闭通道不再接收任务
@@ -249,6 +262,10 @@ func (p *Pool) Release() {
 
 func (p *gpool) isFull() bool {
 	return atomic.LoadInt64(&p.options.capacity) <= atomic.LoadInt64(&p.workingNum)
+}
+
+func (p *Pool) IsClosed() bool {
+	return atomic.LoadInt64(&p.state) == StateStopped
 }
 
 func (p *Pool) Stat() {

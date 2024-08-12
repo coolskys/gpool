@@ -1,6 +1,7 @@
 package gpool
 
 import (
+	"fmt"
 	"gpool/pkg/utils"
 	"time"
 )
@@ -42,7 +43,7 @@ var (
 	sf, _ = utils.NewSnowflake(1)
 )
 
-type ITask interface {
+type GTask interface {
 	GetTaskID() uint64
 	GetArgs() []interface{}
 	GetState() string
@@ -66,7 +67,7 @@ func NewBlockTask(name string, bfn TaskBFn, args ...interface{}) *task {
 	}
 }
 
-func NewTask(name string, fn TaskFn, args ...interface{}) ITask {
+func NewTask(name string, fn TaskFn, args ...interface{}) GTask {
 	if fn == nil {
 		return nil
 	}
@@ -99,6 +100,17 @@ func (t *task) IsBlock() bool {
 }
 
 func (t *task) Execute(done chan bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("xxxxxxxxxxxxx,", r, t.id)
+			t.state = TASK_FAILED
+			t.result = &Result{
+				Err: fmt.Errorf("%v", r),
+			}
+			done <- true
+		}
+	}()
+
 	if t == nil {
 		return
 	}

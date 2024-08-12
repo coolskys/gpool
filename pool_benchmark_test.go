@@ -2,9 +2,7 @@ package gpool
 
 import (
 	"context"
-	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,31 +19,6 @@ const (
 func demoFunc(args ...interface{}) (interface{}, error) {
 	time.Sleep(time.Duration(BenchParam) * time.Millisecond)
 	return nil, nil
-}
-
-func demoPoolFunc(args interface{}) {
-	n := args.(int)
-	time.Sleep(time.Duration(n) * time.Millisecond)
-}
-
-var stopLongRunningFunc int32
-
-func longRunningFunc() {
-	for atomic.LoadInt32(&stopLongRunningFunc) == 0 {
-		runtime.Gosched()
-	}
-}
-
-var stopLongRunningPoolFunc int32
-
-func longRunningPoolFunc(arg interface{}) {
-	if ch, ok := arg.(chan struct{}); ok {
-		<-ch
-		return
-	}
-	for atomic.LoadInt32(&stopLongRunningPoolFunc) == 0 {
-		runtime.Gosched()
-	}
 }
 
 func BenchmarkGoroutines(b *testing.B) {
@@ -104,17 +77,16 @@ func BenchmarkGPool(b *testing.B) {
 	var wg sync.WaitGroup
 	p := NewGPool(context.Background(),
 		WithName("default"),
-		WithCapacity(10),
-		WithMaxTaskNum(10000),
+		WithCapacity(PoolCap),
 		WithMode(ModeBlock),
 		WithTimeout(30*time.Second))
+	p.Start()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		wg.Add(RunTimes)
 		for j := 0; j < RunTimes; j++ {
-			var task = NewTask("test task", demoFunc, nil)
-			_ = p.Submit(task)
+			_ = p.Submit(NewTask("test task", demoFunc, nil))
 			wg.Done()
 		}
 		wg.Wait()
@@ -140,4 +112,37 @@ func BenchmarkSemaphoreThroughput(b *testing.B) {
 			}()
 		}
 	}
+}
+
+func BenchmarkGPoolThroughput(b *testing.B) {
+	p := NewGPool(context.Background(),
+		WithName("default"),
+		WithCapacity(PoolCap),
+		WithMode(ModeBlock))
+	p.Start()
+
+	defer p.Release()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < RunTimes; j++ {
+			_ = p.Submit(NewTask("test task", demoFunc, nil))
+		}
+	}
+}
+
+func BenchmarkParallelGPoolThroughput(b *testing.B) {
+	p := NewGPool(context.Background(),
+		WithName("default"),
+		WithCapacity(PoolCap),
+		WithMode(ModeBlock))
+	p.Start()
+	defer p.Release()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = p.Submit(NewTask("test task", demoFunc, nil))
+		}
+	})
 }

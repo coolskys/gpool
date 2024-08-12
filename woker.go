@@ -4,9 +4,14 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 type workerState uint
+
+var (
+	id int64 = 0
+)
 
 const (
 	WorkerFree workerState = iota
@@ -16,8 +21,9 @@ const (
 
 // 工作者
 type worker struct {
+	id     int64
 	pool   *Pool
-	task   ITask
+	task   GTask
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -28,7 +34,7 @@ type worker struct {
 }
 
 type IWorker interface {
-	Execute(ctx context.Context)
+	Execute()
 	Kill(err error)
 	State() string
 }
@@ -36,6 +42,7 @@ type IWorker interface {
 func newWorker(pool *Pool) *worker {
 	ctx, cancel := context.WithCancel(pool.context)
 	worker := &worker{
+		id:     atomic.AddInt64(&id, 1),
 		mu:     sync.Mutex{},
 		pool:   pool,
 		ctx:    ctx,
@@ -46,31 +53,30 @@ func newWorker(pool *Pool) *worker {
 }
 
 // 执行任务
-func (w *worker) Execute(ctx context.Context) {
+func (w *worker) Execute() {
 	defer w.pool.wg.Done()
 
 	w.mu.Lock()
 	w.sig = WorkerWorking
 	w.mu.Unlock()
 
+	// 一般是定时任务
 	if w.task.IsBlock() {
 		for {
 			select {
+			// 监听到进程退出
 			case <-w.ctx.Done():
-				// 监听到worker退出，则停止任务执行
-				fmt.Println("context done")
 				w.task.Stop()
 				return
 			case <-w.done:
+				// 任务执行完成
 				return
 			default:
-				if w.sig != WorkerWorking {
-					w.task.Execute(w.done)
-				}
+				w.task.Execute(w.done)
 			}
 		}
 	} else {
-		fmt.Println("执行任务", w.task.GetTaskID())
+		fmt.Printf("workerID:%d,  taskID:%d\n", w.id, w.task.GetTaskID())
 		w.task.Execute(w.done)
 	}
 }
@@ -83,6 +89,7 @@ func (w *worker) Kill(err error) {
 			w.task.Stop()
 		}
 	}
+	w.cancel()
 
 	w.mu.Lock()
 	w.sig = WorkerFree

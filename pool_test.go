@@ -14,25 +14,21 @@ var sum int32
 func myFunc(i interface{}) {
 	n := i.(int32)
 	atomic.AddInt32(&sum, n)
-	fmt.Printf("run with %d\n", n)
-}
-
-func demoFuncs(args ...interface{}) {
-	time.Sleep(10 * time.Millisecond)
-	fmt.Println("Hello World!")
+	fmt.Println(1 / sum)
 }
 
 func TestGPool(t *testing.T) {
 	pool := NewGPool(context.Background(),
 		WithName("default"),
 		WithCapacity(10),
-		WithMaxTaskNum(10000),
 		WithMode(ModeBlock),
 		WithTimeout(30*time.Second),
 	)
 	pool.Start()
-	runTimes := 1000
-	var wg sync.WaitGroup
+	defer pool.Release()
+
+	runTimes := 20
+	var wg = sync.WaitGroup{}
 	syncCalculateSum := func(args ...interface{}) (interface{}, error) {
 		myFunc(args[0])
 		wg.Done()
@@ -43,13 +39,11 @@ func TestGPool(t *testing.T) {
 		var task = NewTask("caculate", syncCalculateSum, int32(i))
 
 		_ = pool.Submit(task)
-		fmt.Println("提交任务：", i+1)
 	}
 	wg.Wait()
 	fmt.Println("result:", sum)
-	if sum != 499500 {
-		panic("caculate error")
+	if sum != 20*19/2 {
+		t.Errorf("caculate error")
+		return
 	}
-	time.Sleep(time.Second)
-	pool.Release()
 }

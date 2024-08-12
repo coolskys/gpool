@@ -47,9 +47,3 @@ func WithMode(mode PoolWorkMode) Option {
 		opts.mode = mode
 	}
 }
-
-func WithMaxTaskNum(maxTaskNum int64) Option {
-	return func(opts *Options) {
-		opts.maxTaskNum = maxTaskNum
-	}
-}
